@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Senso-Care/SensoApi/internal/config"
 	"github.com/Senso-Care/SensoApi/internal/models"
@@ -77,7 +78,7 @@ func (service *InfluxService) GetMetrics(ctx context.Context, timeRange string) 
 
 func (service *InfluxService) GetMetricsFromType(ctx context.Context, measurement, timeRange string) (*models.Metric, error) {
 	result, err := service.QueryApi.Query(ctx, fmt.Sprintf(`from(bucket: "%s")|>range(start: -%s)|>group(columns:["sensor"])|>filter(fn: (r) => r._measurement == "%s")`, service.bucket, timeRange, measurement))
-	data := make(map[string][]models.DataPoint)
+	data := make(map[string]map[time.Time]*models.DataPoint)
 	if err == nil {
 		for result.Next() {
 			sensor, ok := result.Record().ValueByKey("sensor").(string)
@@ -85,24 +86,10 @@ func (service *InfluxService) GetMetricsFromType(ctx context.Context, measuremen
 				log.Println("Bad type for sensor")
 				continue
 			}
-			if len(data[sensor]) == 0 {
-				data[sensor] = make([]models.DataPoint, 0)
+			if data[sensor] == nil {
+				data[sensor] = make(map[time.Time]*models.DataPoint)
 			}
-			value, ok := result.Record().Value().(string)
-			if !ok {
-				log.Println("Bad type for value")
-				continue
-			}
-			fValue, err := strconv.ParseFloat(value, 32)
-			if err != nil {
-				log.Println(err)
-			}
-			date := result.Record().Time()
-			dataPoint := models.DataPoint{
-				Date:  date.Format(time.RFC3339),
-				Value: float32(fValue),
-			}
-			data[sensor] = append(data[sensor], dataPoint)
+			processQueryResult(result, data[sensor])
 		}
 		if result.Err() != nil {
 			log.Printf("Query error: %s\n", result.Err().Error())
@@ -113,26 +100,17 @@ func (service *InfluxService) GetMetricsFromType(ctx context.Context, measuremen
 		return nil, err
 	}
 
-	sensors := make([]models.SensorData, 0)
-
+	sensors := createSensorListFromMap(data)
 	metric := &models.Metric{
 		Type: measurement,
+		Sensors: sensors,
 	}
-
-	for key, value := range data {
-		val := models.SensorData{
-			Name: key,
-			Series: value,
-		}
-		sensors = append(sensors, val)
-	}
-	metric.Sensors = sensors
 	return metric, nil
 }
 
 func (service *InfluxService) GetLastMetrics(ctx context.Context, measurement, timeRange string) ([]models.SensorData, error) {
 	result, err := service.QueryApi.Query(ctx, fmt.Sprintf(`from(bucket: "%s")|>range(start: -%s)|>group(columns:["sensor"])|>filter(fn: (r) => r._measurement == "%s")|>sort(columns:["time"], desc: true)|>limit(n:1)`, service.bucket, timeRange, measurement))
-	data := make(map[string][]models.DataPoint)
+	data := make(map[string]map[time.Time]*models.DataPoint)
 	if err == nil {
 		for result.Next() {
 			sensor, ok := result.Record().ValueByKey("sensor").(string)
@@ -140,24 +118,10 @@ func (service *InfluxService) GetLastMetrics(ctx context.Context, measurement, t
 				log.Println("Bad type for sensor")
 				continue
 			}
-			if len(data[sensor]) == 0 {
-				data[sensor] = make([]models.DataPoint, 0)
+			if data[sensor] == nil {
+				data[sensor] = make(map[time.Time]*models.DataPoint)
 			}
-			value, ok := result.Record().Value().(string)
-			if !ok {
-				log.Println("Bad type for value")
-				continue
-			}
-			fValue, err := strconv.ParseFloat(value, 32)
-			if err != nil {
-				log.Println(err)
-			}
-			date := result.Record().Time()
-			dataPoint := models.DataPoint{
-				Date:  date.Format(time.RFC3339),
-				Value: float32(fValue),
-			}
-			data[sensor] = append(data[sensor], dataPoint)
+			processQueryResult(result, data[sensor])
 		}
 		if result.Err() != nil {
 			log.Printf("Query error: %s\n", result.Err().Error())
@@ -168,38 +132,17 @@ func (service *InfluxService) GetLastMetrics(ctx context.Context, measurement, t
 		return nil, err
 	}
 
-	sensors := make([]models.SensorData, 0)
-	for key, value := range data {
-		val := models.SensorData{
-			Name: key,
-			Series: value,
-		}
-		sensors = append(sensors, val)
-	}
+	sensors := createSensorListFromMap(data)
 	return sensors, nil
 }
 
 
 func (service *InfluxService) GetMetricsFromSensor(ctx context.Context, sensor string, timeRange string) (*models.SensorData, error) {
 	result, err := service.QueryApi.Query(ctx, fmt.Sprintf(`from(bucket: "%s")|>range(start: -%s)|>group(columns:["sensor"])|>filter(fn: (r) => r.sensor == "%s")`, service.bucket, timeRange, sensor))
-	data := make([]models.DataPoint, 0)
+	dataMap := make(map[time.Time]*models.DataPoint)
 	if err == nil {
 		for result.Next() {
-			value, ok := result.Record().Value().(string)
-			if !ok {
-				log.Println("Bad type for value")
-				continue
-			}
-			fValue, err := strconv.ParseFloat(value, 32)
-			if err != nil {
-				log.Println(err)
-			}
-			date := result.Record().Time()
-			dataPoint := models.DataPoint{
-				Date:  date.Format(time.RFC3339),
-				Value: float32(fValue),
-			}
-			data = append(data, dataPoint)
+			processQueryResult(result, dataMap)
 		}
 		if result.Err() != nil {
 			log.Printf("Query error: %s\n", result.Err().Error())
@@ -209,7 +152,10 @@ func (service *InfluxService) GetMetricsFromSensor(ctx context.Context, sensor s
 		log.Error(err)
 		return nil, err
 	}
-
+	data := make([]models.DataPoint, 0)
+	for _, value := range dataMap {
+		data = append(data, *value)
+	}
 	sensorData := &models.SensorData{
 		Name: sensor,
 		Series: data,
@@ -240,4 +186,63 @@ func (service *InfluxService) PostMetricsFromType(ctx context.Context, type_ str
 
 func (service *InfluxService) Close() {
 	service.InfluxClient.Close()
+}
+
+func dataPointExists(dataMap map[time.Time]*models.DataPoint, date time.Time) *models.DataPoint {
+	ptr := dataMap[date]
+	if ptr == nil {
+		dataMap[date] = &models.DataPoint{
+			Date: date.Format(time.RFC3339),
+		}
+		ptr = dataMap[date]
+	}
+	return ptr
+}
+
+func processQueryResult(result *api.QueryTableResult, dataMap map[time.Time]*models.DataPoint) {
+	date := result.Record().Time()
+	dataPoint := dataPointExists(dataMap, date)
+
+	var err_ error
+	switch result.Record().Field() {
+	case "v":
+		value, ok := result.Record().Value().(string)
+		if !ok {
+			err_ = errors.New("bad type for value")
+			break
+		}
+		fValue, err := strconv.ParseFloat(value, 32)
+		if err != nil {
+			err_ = err
+			break
+		}
+		dataPoint.Value = float32(fValue)
+	case "info":
+		value, ok := result.Record().Value().(string)
+		if !ok {
+			err_ = errors.New("bad type for info")
+			break
+		}
+		dataPoint.Info = value
+	}
+
+	if err_ != nil {
+		log.Println(err_)
+	}
+}
+
+func createSensorListFromMap(dataMap map[string]map[time.Time]*models.DataPoint) []models.SensorData {
+	sensors := make([]models.SensorData, 0)
+	for sensor, sensorMap := range dataMap {
+		var dataPoints []models.DataPoint
+		for _, dataPoint := range sensorMap {
+			dataPoints = append(dataPoints, *dataPoint)
+		}
+		val := models.SensorData{
+			Name: sensor,
+			Series: dataPoints,
+		}
+		sensors = append(sensors, val)
+	}
+	return sensors
 }
