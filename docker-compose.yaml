@@ -1,0 +1,21 @@
+version: "3"
+
+services:
+  sensoapi:
+    image: registry.zouzland.com/sensocare/sensoapi:alpine
+    container_name: sensoapi
+    user: ${USID}:${GID}
+    restart: always
+    environment:
+      SENSO_CARE_DATABASE_CONNECTIONURI: http://influxdb:8086
+      SENSO_CARE_DATABASE_USERNAME: admin
+      SENSO_CARE_DATABASE_PASSWORD: admin
+      SENSO_CARE_DATABASE_DBNAME: sensocare
+      SENSO_CARE_MOCK: 1
+  nginx-proxy:
+    restart: always
+    image: jwilder/nginx-proxy
+    ports:
+      - "8080:80"
+    volumes:
+      - "/var/run/docker.sock:/tmp/docker.sock:ro"

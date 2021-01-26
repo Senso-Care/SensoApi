@@ -1,0 +1,9 @@
+database:
+  connectionuri: http://localhost:8086
+  username: influxdb
+  password: influxdb
+  dbname: sensocare
+  retentionpolicy: one_year
+cores: 6
+mock: false
+port: 8080

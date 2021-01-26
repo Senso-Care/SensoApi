@@ -1,0 +1,234 @@
+openapi: 3.0.1
+info:
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Senso-Care
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1
+paths:
+  /sensors:
+    get:
+      operationId: get_sensors
+      parameters:
+        - description: Time range
+          explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                type: array
+          description: Ok
+      summary: Get list of sensors
+  /sensors/{name}:
+    get:
+      description: Returns the metrics of a specific sensor
+      operationId: get_metrics_from_sensor
+      parameters:
+        - description: Sensor name
+          explode: false
+          in: path
+          name: name
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+        - description: Time range
+          explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorData'
+          description: Ok
+      summary: Get data from sensor
+  /metrics:
+    get:
+      description: Returns the list of metrics type (temperature, humidity...)
+      operationId: get_metrics
+      parameters:
+        - description: Time range
+          explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                type: array
+          description: Ok
+      summary: Get list of metrics types
+  /metrics/{type}/last:
+    get:
+      description: Get last value of all sensors of a given metric
+      operationId: get_last_metrics
+      parameters:
+        - description: Metrics type
+          explode: false
+          in: path
+          name: type
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+        - description: Time range
+          explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/SensorData'
+                type: array
+          description: Ok
+      summary: Get last value of all sensors of a given metric
+  /metrics/{type}:
+    get:
+      description: Returns the metrics of a specific type (temperature, humidity...)
+      operationId: get_metrics_from_type
+      parameters:
+        - description: Metrics type
+          explode: false
+          in: path
+          name: type
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+        - description: Time range
+          explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metric'
+          description: Ok
+      summary: Get data from type
+    post:
+      description: Post a metric
+      operationId: post_metrics_from_type
+      parameters:
+        - description: Metrics type
+          explode: false
+          in: path
+          name: type
+          required: true
+          schema:
+            minimum: 1
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataPoint'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metric'
+          description: Ok
+      summary: Get data from type
+components:
+  schemas:
+    DataPoint:
+      example:
+        date: 2020-01-25T11:47:39.489Z
+        value: 23.5
+        info: Headaches
+      properties:
+        date:
+          type: string
+        value:
+          type: number
+        info:
+          type: string
+      type: object
+    Metric:
+      example:
+        sensors:
+          - series:
+              - date: 2020-01-25T11:47:39.489Z
+                value: 23.5
+              - date: 2020-01-25T11:47:39.489Z
+                value: 23.5
+            name: name
+          - series:
+              - date: 2020-01-25T11:47:39.489Z
+                value: 23.5
+              - date: 2020-01-25T11:47:39.489Z
+                value: 23.5
+            name: name
+        type: type
+      properties:
+        type:
+          type: string
+        sensors:
+          items:
+            $ref: '#/components/schemas/SensorData'
+          type: array
+      type: object
+    SensorData:
+      example:
+        series:
+          - date: 2020-01-25T11:47:39.489Z
+            value: 23.5
+          - date: 2020-01-25T11:47:39.489Z
+            value: 23.5
+        name: name
+      properties:
+        name:
+          type: string
+        series:
+          items:
+            $ref: '#/components/schemas/DataPoint'
+          type: array
+      type: object
