@@ -171,11 +171,9 @@ paths:
         required: true
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Metric'
           description: Ok
+        "400":
+          description: "Error inserting measure"
       summary: Get data from type
 components:
   schemas:
