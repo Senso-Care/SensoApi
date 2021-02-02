@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/Senso-Care/SensoApi/internal/config"
 	"github.com/Senso-Care/SensoApi/internal/models"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
 	log "github.com/sirupsen/logrus"
-	"strconv"
-	"time"
 )
-
 
 type InfluxService struct {
 	InfluxClient influxdb2.Client
@@ -22,7 +22,6 @@ type InfluxService struct {
 }
 
 type TimePointMap map[string]map[time.Time]*models.DataPoint
-
 
 // NewDefaultApiService creates a default api service
 func NewInfluxService(configuration *config.DatabaseConfiguration) InfluxServicer {
@@ -95,7 +94,7 @@ func (service *InfluxService) GetMetricsFromType(ctx context.Context, measuremen
 
 	sensors := createSensorListFromMap(data)
 	metric := &models.Metric{
-		Type: measurement,
+		Type:    measurement,
 		Sensors: sensors,
 	}
 	return metric, nil
@@ -119,7 +118,6 @@ func (service *InfluxService) GetLastMetrics(ctx context.Context, measurement, t
 	return sensors, nil
 }
 
-
 func (service *InfluxService) GetMetricsFromSensor(ctx context.Context, sensor string, timeRange string) (*models.SensorData, error) {
 	result, err := service.QueryApi.Query(ctx, fmt.Sprintf(`from(bucket: "%s")|>range(start: -%s)|>group(columns:["sensor"])|>filter(fn: (r) => r.sensor == "%s")`, service.bucket, timeRange, sensor))
 	dataMap := make(map[time.Time]*models.DataPoint)
@@ -140,7 +138,7 @@ func (service *InfluxService) GetMetricsFromSensor(ctx context.Context, sensor s
 		data = append(data, *value)
 	}
 	sensorData := &models.SensorData{
-		Name: sensor,
+		Name:   sensor,
 		Series: data,
 	}
 
@@ -153,7 +151,7 @@ func (service *InfluxService) PostMetricsFromType(ctx context.Context, type_ str
 		return err
 	}
 	value := influxdb2.NewPointWithMeasurement(type_).
-		AddTag("sensor", type_ + "-web").
+		AddTag("sensor", type_+"-web").
 		AddField("v", fmt.Sprintf("%f", point.Value)).
 		SetTime(date)
 	if len(point.Info) > 0 {
@@ -203,17 +201,24 @@ func processQueryResult(result *api.QueryTableResult, dataMap map[time.Time]*mod
 	var err_ error
 	switch result.Record().Field() {
 	case "v":
-		value, ok := result.Record().Value().(string)
-		if !ok {
+		switch value := result.Record().Value().(type) {
+		case int64:
+			dataPoint.Value = float32(value)
+		case float32:
+			dataPoint.Value = value
+		case float64:
+			dataPoint.Value = float32(value)
+		case string:
+			fValue, err := strconv.ParseFloat(value, 32)
+			if err != nil {
+				err_ = err
+				break
+			}
+			dataPoint.Value = float32(fValue)
+		default:
 			err_ = errors.New("bad type for value")
 			break
 		}
-		fValue, err := strconv.ParseFloat(value, 32)
-		if err != nil {
-			err_ = err
-			break
-		}
-		dataPoint.Value = float32(fValue)
 	case "info":
 		value, ok := result.Record().Value().(string)
 		if !ok {
@@ -236,7 +241,7 @@ func createSensorListFromMap(dataMap TimePointMap) []models.SensorData {
 			dataPoints = append(dataPoints, *dataPoint)
 		}
 		val := models.SensorData{
-			Name: sensor,
+			Name:   sensor,
 			Series: dataPoints,
 		}
 		sensors = append(sensors, val)
