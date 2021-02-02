@@ -201,24 +201,17 @@ func processQueryResult(result *api.QueryTableResult, dataMap map[time.Time]*mod
 	var err_ error
 	switch result.Record().Field() {
 	case "v":
-		switch value := result.Record().Value().(type) {
-		case int64:
-			dataPoint.Value = float32(value)
-		case float32:
-			dataPoint.Value = value
-		case float64:
-			dataPoint.Value = float32(value)
-		case string:
-			fValue, err := strconv.ParseFloat(value, 32)
-			if err != nil {
-				err_ = err
-				break
-			}
-			dataPoint.Value = float32(fValue)
-		default:
+		value, ok := result.Record().Value().(string)
+		if !ok {
 			err_ = errors.New("bad type for value")
 			break
 		}
+		fValue, err := strconv.ParseFloat(value, 32)
+		if err != nil {
+			err_ = err
+			break
+		}
+		dataPoint.Value = float32(fValue)
 	case "info":
 		value, ok := result.Record().Value().(string)
 		if !ok {
